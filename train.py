@@ -10,6 +10,7 @@ from torch.nn import functional as F
 from torch.utils import data
 import torch.distributed as dist
 from torchvision import transforms, utils
+from torchvision.transforms.transforms import RandomResizedCrop
 from tqdm import tqdm
 
 try:
@@ -70,7 +71,7 @@ def d_logistic_loss(real_pred, fake_pred):
 
 def d_r1_loss(real_pred, real_img):
     with conv2d_gradfix.no_weight_gradients():
-        grad_real, = autograd.grad(
+        (grad_real,) = autograd.grad(
             outputs=real_pred.sum(), inputs=real_img, create_graph=True
         )
     grad_penalty = grad_real.pow(2).reshape(grad_real.shape[0], -1).sum(1).mean()
@@ -88,7 +89,7 @@ def g_path_regularize(fake_img, latents, mean_path_length, decay=0.01):
     noise = torch.randn_like(fake_img) / math.sqrt(
         fake_img.shape[2] * fake_img.shape[3]
     )
-    grad, = autograd.grad(
+    (grad,) = autograd.grad(
         outputs=(fake_img * noise).sum(), inputs=latents, create_graph=True
     )
     path_lengths = torch.sqrt(grad.pow(2).sum(2).mean(1))
@@ -334,25 +335,46 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="StyleGAN2 trainer")
 
-    parser.add_argument("path", type=str, help="path to the lmdb dataset")
-    parser.add_argument('--arch', type=str, default='stylegan2', help='model architectures (stylegan2 | swagan)')
     parser.add_argument(
-        "--iter", type=int, default=800000, help="total training iterations"
+        "path",
+        type=str,
+        help="path to the lmdb dataset",
     )
     parser.add_argument(
-        "--batch", type=int, default=16, help="batch sizes for each gpus"
+        "--arch",
+        type=str,
+        default="stylegan2",
+        help="model architectures (stylegan2 | swagan)",
+    )
+    parser.add_argument(
+        "--iter",
+        type=int,
+        default=800000,
+        help="total training iterations",
+    )
+    parser.add_argument(
+        "--batch",
+        type=int,
+        default=16,
+        help="batch sizes for each gpus",
     )
     parser.add_argument(
         "--n_sample",
         type=int,
-        default=64,
+        default=16,
         help="number of the samples generated during training",
     )
     parser.add_argument(
-        "--size", type=int, default=256, help="image sizes for the model"
+        "--size",
+        type=int,
+        default=256,
+        help="image sizes for the model",
     )
     parser.add_argument(
-        "--r1", type=float, default=10, help="weight of the r1 regularization"
+        "--r1",
+        type=float,
+        default=10,
+        help="weight of the r1 regularization",
     )
     parser.add_argument(
         "--path_regularize",
@@ -379,7 +401,10 @@ if __name__ == "__main__":
         help="interval of the applying path length regularization",
     )
     parser.add_argument(
-        "--mixing", type=float, default=0.9, help="probability of latent code mixing"
+        "--mixing",
+        type=float,
+        default=0.9,
+        help="probability of latent code mixing",
     )
     parser.add_argument(
         "--ckpt",
@@ -387,7 +412,12 @@ if __name__ == "__main__":
         default=None,
         help="path to the checkpoints to resume training",
     )
-    parser.add_argument("--lr", type=float, default=0.002, help="learning rate")
+    parser.add_argument(
+        "--lr",
+        type=float,
+        default=0.002,
+        help="learning rate",
+    )
     parser.add_argument(
         "--channel_multiplier",
         type=int,
@@ -395,13 +425,20 @@ if __name__ == "__main__":
         help="channel multiplier factor for the model. config-f = 2, else = 1",
     )
     parser.add_argument(
-        "--wandb", action="store_true", help="use weights and biases logging"
+        "--wandb",
+        action="store_true",
+        help="use weights and biases logging",
     )
     parser.add_argument(
-        "--local_rank", type=int, default=0, help="local rank for distributed training"
+        "--local_rank",
+        type=int,
+        default=0,
+        help="local rank for distributed training",
     )
     parser.add_argument(
-        "--augment", action="store_true", help="apply non leaking augmentation"
+        "--augment",
+        action="store_true",
+        help="apply non leaking augmentation",
     )
     parser.add_argument(
         "--augment_p",
@@ -443,10 +480,10 @@ if __name__ == "__main__":
 
     args.start_iter = 0
 
-    if args.arch == 'stylegan2':
+    if args.arch == "stylegan2":
         from model import Generator, Discriminator
 
-    elif args.arch == 'swagan':
+    elif args.arch == "swagan":
         from swagan import Generator, Discriminator
 
     generator = Generator(
@@ -509,20 +546,26 @@ if __name__ == "__main__":
             broadcast_buffers=False,
         )
 
+    target_size = (args.size, args.size)
+    scale_range = (0.6, 0.99)
+    ratio_range = (4 / 5, 5 / 4)
     transform = transforms.Compose(
         [
+            transforms.RandomResizedCrop(target_size, scale_range, ratio_range),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True),
         ]
     )
 
-    dataset = MultiResolutionDataset(args.path, transform, args.size)
+    dataset = MultiResolutionDataset(args.path, transform)
     loader = data.DataLoader(
         dataset,
+        # shuffle=True,
         batch_size=args.batch,
         sampler=data_sampler(dataset, shuffle=True, distributed=args.distributed),
         drop_last=True,
+        # num_workers=4,
     )
 
     if get_rank() == 0 and wandb is not None and args.wandb:
