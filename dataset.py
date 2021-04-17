@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 
 
 class MultiResolutionDataset(Dataset):
-    def __init__(self, path, transform, resolution=256):
+    def __init__(self, path, transform):
         self.env = lmdb.open(
             path,
             max_readers=32,
@@ -22,7 +22,6 @@ class MultiResolutionDataset(Dataset):
         with self.env.begin(write=False) as txn:
             self.length = int(txn.get('length'.encode('utf-8')).decode('utf-8'))
 
-        self.resolution = resolution
         self.transform = transform
 
     def __len__(self):
@@ -30,7 +29,7 @@ class MultiResolutionDataset(Dataset):
 
     def __getitem__(self, index):
         with self.env.begin(write=False) as txn:
-            key = f'{self.resolution}-{str(index).zfill(5)}'.encode('utf-8')
+            key = f'{str(index).zfill(5)}'.encode('utf-8')
             img_bytes = txn.get(key)
 
         buffer = BytesIO(img_bytes)
