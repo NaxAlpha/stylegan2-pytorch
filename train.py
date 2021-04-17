@@ -309,7 +309,10 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
                     sample, _ = g_ema([sample_z])
                     utils.save_image(
                         sample,
-                        f"sample/{str(i).zfill(6)}.png",
+                        os.path.join(
+                            args.sample_dir,
+                            f"{str(i).zfill(6)}.png",
+                        ),
                         nrow=int(args.n_sample ** 0.5),
                         normalize=True,
                         range=(-1, 1),
@@ -326,7 +329,10 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
                         "args": args,
                         "ada_aug_p": ada_aug_p,
                     },
-                    f"checkpoint/{str(i).zfill(6)}.pt",
+                    os.path.join(
+                        args.model_dir,
+                        f"{str(i).zfill(6)}.pt",
+                    ),
                 )
 
 
@@ -463,6 +469,18 @@ if __name__ == "__main__":
         type=int,
         default=256,
         help="probability update interval of the adaptive augmentation",
+    )
+    parser.add_argument(
+        "--sample_dir",
+        type=str,
+        default="sample",
+        help="where to save generated samples",
+    )
+    parser.add_argument(
+        "--model_dir",
+        type=str,
+        default="checkpoint",
+        help="where to save model weights",
     )
 
     args = parser.parse_args()
